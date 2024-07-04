@@ -17,7 +17,7 @@ def generate_permutations(a, n):
             
 
 
-word = 'Svetlin'
+word = '21'
 
 generate_permutations(list(word), len(word)-1)
 

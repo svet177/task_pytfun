@@ -19,4 +19,8 @@ word = sys.argv[1]
 
 generate_permutations(list(word), len(word)-1)
 # output of 20 random values from the cllection of values in the list x (duplicates allowed)
-print(random.sample(x,20))
+
+if len(x)<20:
+    print(x)
+else:
+        print(random.sample(x,20))
