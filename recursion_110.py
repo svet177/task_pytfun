@@ -1,7 +1,10 @@
-import sys, random
+"""Iterate on a given singular string via Heap's algorithm"""
+import sys
+import random
 # x is going to collect all our output
 x=[]
 def generate_permutations(a, n):
+    """function to apply Heap's algorithm"""
     if n == 0:
         # changed from direct output on each iteration to appending values in a list
         x.append(''.join(a))
@@ -23,4 +26,4 @@ generate_permutations(list(word), len(word)-1)
 if len(x)<20:
     print(x)
 else:
-        print(random.sample(x,20))
+    print(random.sample(x,20))
