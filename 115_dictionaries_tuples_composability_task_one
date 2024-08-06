@@ -1,37 +1,113 @@
-import time
+import asyncio
+import websockets
 import json
-import threading
-import websocket
+import time
+from collections import defaultdict
 
+async def process_data(raw_data):
+    try:
+        # Attempt to parse JSON data
+        data = json.loads(raw_data)
 
-#part of stopping the data stream - it was easier for me to iterate and test the code this
-stop_event = threading.Event()
+        # Ignore non-trade messages
+        if data.get('type') == 'ping':
+            return
 
-def collect_data():
-    uri = "wss://ws.finnhub.io?token=cqohj5hr01qk95835l60cqohj5hr01qk95835l6g"
+        if 'data' in data and len(data['data']) > 0:
+            relevant_data = data['data'][0]  # Access the first trade data item
+            # Aligned output with 8 decimal places for volume
+            print(f"{'Time:' : <6}{time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(relevant_data['t']/1000.0)) : <24}{'Price:' :<8}{relevant_data['p']: <14}{'Volume:' :<8}{relevant_data['v']:.8f}")
+        else:
+            print("Received unexpected data format:", data)
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON: {e}")
+    except KeyError as e:
+        print(f"Missing key in data: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred in process_data: {e}")
 
-    ws = websocket.create_connection(uri)
+async def calculate_vwap(raw_data, trade_data, current_minute):
+    try:
+        # Parse the incoming data
+        data = json.loads(raw_data)
 
-    payload = {
-        "type": "subscribe",
-        "symbol": "BINANCE:BTCUSDT",
-    }
-    ws.send(json.dumps(payload))
+        # Ignore non-trade messages
+        if data.get('type') == 'ping':
+            return current_minute
 
-    while not stop_event.is_set():
-        message = ws.recv() #message comming in as a json struccture
-        raw_data=json.loads(message) #placing json data in a dict
-        relevant_data=(raw_data['data'][0])  #removing irrelevant data from the dict for easier manipulatios
-        #aligned output
-        print(f"{"Time:" : <6}{time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(relevant_data['t']/1000.0)) : <24}{"Price:" :<8}{relevant_data['p']: <14}{"Volume:" :<8}{relevant_data['v'] : <7}")
-        
+        if 'data' in data:
+            for trade in data['data']:
+                trade_time = trade['t'] // 1000  # Convert milliseconds to seconds
+                trade_minute = trade_time // 60  # Get the minute timestamp
+                trade_price = trade['p']
+                trade_volume = trade['v']
 
-    ws.close()
+                if trade_minute == current_minute:
+                    trade_data[trade_minute]['total_price_volume'] += trade_price * trade_volume
+                    trade_data[trade_minute]['total_volume'] += trade_volume
+                else:
+                    # Wait 15 seconds to ensure all messages for the elapsed minute are received
+                    await asyncio.sleep(15)
 
-#stopping the data stream automatically makes iterating and testing much easier, can be disabld for final version
-t = threading.Thread(target=collect_data)
-t.start()
-time.sleep(10) #remove value to make infinite
+                    # When a new minute starts, calculate VWAP for the previous minute
+                    if trade_data[current_minute]['total_volume'] > 0:
+                        vwap = trade_data[current_minute]['total_price_volume'] / trade_data[current_minute]['total_volume']
+                        print(f"VWAP for minute {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(current_minute * 60))}: {vwap:.2f}")
 
-stop_event.set()
-t.join()
+                    # Update current_minute and reset trade data for the new minute
+                    current_minute = trade_minute
+                    trade_data[current_minute] = {'total_price_volume': trade_price * trade_volume, 'total_volume': trade_volume}
+        else:
+            print("Received unexpected data format for VWAP:", data)
+
+        return current_minute
+
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON: {e}")
+    except KeyError as e:
+        print(f"Missing key in data: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred in calculate_vwap: {e}")
+
+async def handle_websocket(uri, payload, process_option):
+    async with websockets.connect(uri) as websocket:
+        print(f"Connected to {uri}")
+
+        # Send initial payload to the server
+        await websocket.send(payload)
+        print(f"Sent payload: {payload}")
+
+        # Initialize trade data storage for VWAP calculation
+        trade_data = defaultdict(lambda: {'total_price_volume': 0.0, 'total_volume': 0.0})
+        current_minute = int(time.time()) // 60  # Current minute timestamp
+
+        while True:
+            try:
+                # Receive data from the WebSocket
+                raw_data = await websocket.recv()
+
+                # Process or print the data based on the selected option
+                if process_option == "raw":
+                    print("Raw data:", raw_data)
+                elif process_option == "processed":
+                    await process_data(raw_data)
+                elif process_option == "vwap":
+                    current_minute = await calculate_vwap(raw_data, trade_data, current_minute)
+
+            except websockets.ConnectionClosed:
+                print("Connection closed")
+                break
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                break
+
+def main():
+    uri = "wss://ws.finnhub.io?token=cqohj5hr01qk95835l60cqohj5hr01qk95835l6g"  # Replace with your WebSocket URL
+    payload = '{"type": "subscribe", "symbol": "BINANCE:BTCUSDT"}'  # Replace with your desired payload
+    process_option = "processed"  # Choose "raw", "processed", or "vwap"
+
+    # Start the event loop
+    asyncio.get_event_loop().run_until_complete(handle_websocket(uri, payload, process_option))
+
+if __name__ == "__main__":
+    main()
