@@ -1,0 +1,38 @@
+import time
+import json
+import threading
+import websocket
+
+
+
+stop_event = threading.Event()
+
+def collect_data():
+    uri = "wss://ws.finnhub.io?token=cqohj5hr01qk95835l60cqohj5hr01qk95835l6g"
+
+    ws = websocket.create_connection(uri)
+
+    payload = {
+        "type": "subscribe",
+        "symbol": "BINANCE:BTCUSDT",
+    }
+    ws.send(json.dumps(payload))
+
+    while not stop_event.is_set():
+        message = ws.recv()
+        raw_data=json.loads(message)
+        relevant_data=(raw_data['data'][0])
+        #print("Time:",'%20s' % time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(relevant_data['t']/1000.0)),"Price:",'%7s' % relevant_data['p'],"        ","Volume:",relevant_data['v'])
+        print(f"{"Time:" : <6}{time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(relevant_data['t']/1000.0)) : <24}{"Price:" :<8}{relevant_data['p']: <14}{"Volume:" :<8}{relevant_data['v'] : <7}")
+        #time.sleep(0.25)
+
+    ws.close()
+
+
+t = threading.Thread(target=collect_data)
+t.start()
+
+time.sleep(10)
+
+stop_event.set()
+t.join()
