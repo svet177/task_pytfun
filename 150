@@ -1,0 +1,140 @@
+import json
+import random
+import psycopg2
+from abc import ABC, abstractmethod
+from typing import List, Dict
+
+# Abstract base class for data sources
+class DataSource(ABC):
+    @abstractmethod
+    def get_data(self) -> Dict:
+        """
+        Method to fetch a single piece of data.
+        Should be implemented by subclasses.
+        """
+        pass
+
+# Abstract base class for data sinks
+class DataSink(ABC):
+    @abstractmethod
+    def process(self, data: Dict):
+        """
+        Method to process a single piece of data.
+        Should be implemented by subclasses.
+        """
+        pass
+
+# Simulation data source that generates random data
+class SimulationSource(DataSource):
+    def get_data(self) -> Dict:
+        """
+        Generate random JSON data with predefined structure.
+        """
+        return {
+            "key": random.choice(["A123", "B456", "C789"]),  # Random key
+            "value": str(round(random.uniform(1.0, 100.0), 2)),  # Random value as string
+            "ts": "2024-09-04 12:00:00+00:00"  # Fixed timestamp for simplicity
+        }
+
+# File data source that reads messages from a file
+class FileSource(DataSource):
+    def __init__(self, file_path: str):
+        """
+        Initialize with the path to the input file.
+        """
+        self.file_path = file_path
+        self.data = self._load_file()  # Load data from file
+        self.index = 0  # Index to track the current position in the data list
+
+    def _load_file(self) -> List[Dict]:
+        """
+        Load JSON data from the specified file.
+        """
+        with open(self.file_path, 'r') as f:
+            return json.load(f)
+
+    def get_data(self) -> Dict:
+        """
+        Fetch the next piece of data from the file.
+        Raises StopIteration if no more data is available.
+        """
+        if self.index >= len(self.data):
+            raise StopIteration("No more data in file")
+        data = self.data[self.index]
+        self.index += 1
+        return data
+
+# Console data sink that prints data to stdout
+class ConsoleSink(DataSink):
+    def process(self, data: Dict):
+        """
+        Print the JSON data to the console.
+        """
+        print(json.dumps(data))
+
+# PostgreSQL data sink that inserts data into a database
+class PostgresSink(DataSink):
+    def __init__(self, connection_params: Dict):
+        """
+        Initialize with PostgreSQL connection parameters.
+        """
+        
+
+# ETL class to manage the flow of data from source to sink
+class ETL:
+    def __init__(self):
+        """
+        Initialize the ETL class with no source or sink.
+        """
+        self.source = None
+        self.sink = None
+
+    def source(self, source: DataSource):
+        """
+        Set the data source for the ETL process.
+        """
+        self.source = source
+        return self
+
+    def sink(self, sink: DataSink):
+        """
+        Set the data sink for the ETL process.
+        """
+        self.sink = sink
+        return self
+
+    def run(self):
+        """
+        Run the ETL process: read data from source and send it to the sink.
+        """
+        if not self.source or not self.sink:
+            raise ValueError("Source and sink must be specified")
+
+        while True:
+            try:
+                data = self.source.get_data()  # Get data from the source
+                self.sink.process(data)  # Process data through the sink
+            except StopIteration:
+                # Exit the loop when no more data is available
+                break
+
+# Example usage
+if __name__ == "__main__":
+    # Example for SimulationSource and ConsoleSink
+    etl = ETL().source(SimulationSource()).sink(ConsoleSink())
+    etl.run()
+
+    # Example for FileSource and ConsoleSink
+    # etl = ETL().source(FileSource('data.json')).sink(ConsoleSink())
+    # etl.run()
+
+    # Example for FileSource and PostgresSink
+    # db_params = {
+    #     'dbname': 'yourdbname',
+    #     'user': 'youruser',
+    #     'password': 'yourpassword',
+    #     'host': 'localhost',
+    #     'port': '5432'
+    # }
+    # etl = ETL().source(FileSource('data.json')).sink(PostgresSink(db_params))
+    # etl.run()
